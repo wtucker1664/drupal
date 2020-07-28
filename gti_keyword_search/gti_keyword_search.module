@@ -1,0 +1,608 @@
+<?php
+
+function gti_keyword_search_menu(){
+  $items = array();
+
+  $items['admin/config/gti/keyword-search/create-group'] = array(
+    'title' => 'GTI Group Facet',
+    'description' => 'Configure group facets',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('gti_keyword_search_create_group_form'),
+    'access arguments' => array('administer site configuration'),
+    'file' => 'gti_keyword_search.admin.inc',
+    'type' => MENU_NORMAL_ITEM
+  );
+
+  $items['saved-content/saved-search'] = array(
+    'page callback' => '_saved_content_saved_search',
+    'page arguments' => array(1, 2, 3),
+    'access arguments' => array('user save content'),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+
+}
+
+/**
+ * Custom keyword search config
+ */
+function gti_keyword_search_admin() {
+
+  $form =  array();
+
+  $form['keywordsearch_newgroup'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Create a new Facet Group'),
+    '#maxlength' => 200,
+    '#description' => t("(Create a new Facet Group)"),
+    '#default_value' => variable_get("keywordsearch_newgroup", ""),
+  );
+
+  return system_settings_form($form);
+}
+
+function gti_keyword_search_search_api_solr_query_alter(array &$call_args, SearchApiQueryInterface &$query){
+  $premium = &drupal_static("gti_keyword_search_search_api_solr_query_alter");
+  $keyword = $query->getOriginalKeys();
+  if($keyword != ""){
+    if(preg_match("/ /",$keyword)){
+      $keys = explode(" ",$keyword);
+      $q = 'keyword:"'.trim($keyword).'" negkeyword:"'.trim($keyword).' -excludekeyword:"'.trim($keyword).'"';
+
+    }else{
+      $q = 'keyword:"'.trim($keyword).'" negkeyword:"'.trim($keyword).'" -excludekeyword:"'.trim($keyword).'"';
+    }
+    $call_args['query'] = $q;
+
+    if(isset($call_args['params']['qf'])){
+      $count = sizeof($call_args['params']['qf']);
+      for($i=0;$i<$count;$i++){
+        unset($call_args['params']['qf'][$i]);
+      }
+
+      $call_args['params']['qf'] = array();
+      array_push($call_args['params']['qf'],"keyword_url_seg1^20.0 keyword_url_seg2^10.0 keyword_url_seg3^0.5 keyword_url_seg4^0.1 keyword_title^200.0 keyword_sectors^200 keyword_organisation^200 keyword_full_entity^200 keyword_video_catetory^200 keyword_keywords^200000 keyword_neg_keywords^-200000 keyword_exclude_keywords^-2.0");
+      $call_args['params']['f.keyword.qf'] = array();
+      $call_args['params']['f.negkeyword.qf'] = array();
+      $call_args['params']['f.excludekeyword.qf'] = array();
+
+      array_push($call_args['params']['f.keyword.qf'],"keyword_url_seg1^20.0 keyword_url_seg2^10.0 keyword_url_seg3^0.5 keyword_url_seg4^0.1 keyword_title^200.0 keyword_sectors^200 keyword_organisation^200 keyword_full_entity^200 keyword_video_catetory^200 keyword_keywords^200000");
+      array_push($call_args['params']['f.negkeyword.qf'], "keyword_neg_keywords^-200000");
+      array_push($call_args['params']['f.excludekeyword.qf'], "keyword_exclude_keywords^-2.0");
+      $call_args['params']['defType'] = "edismax";
+
+    }
+  }
+  if(is_array($premium)){
+    if(!empty($call_args['query'])){
+      $call_args['query'] .= " AND -id:(";
+    }else{
+      $call_args['query'] .= "-id:(";
+    }
+    for($i=0;$i<sizeof($premium);$i++){
+      if($i+1 == sizeof($premium)){
+        $call_args['query'] .= 'default_node_index-'.$premium[$i];
+      }else{
+        $call_args['query'] .= 'default_node_index-'.$premium[$i]." ";
+      }
+    }
+    $call_args['query'] .= ")";
+    $premium=null;
+  }else{
+    if(isset($call_args['params']['fq'][0])){
+      if($call_args['params']['fq'][0] == 'is_field_ad_vac_premium:"1"') {
+        $premium = 1;
+      }
+    }
+  }
+
+  if(isset($_GET['q'])){
+    if(preg_match("/Advice/",$_GET['q']) || preg_match("/Employers/",$_GET['q']) || preg_match("/Video/",$_GET['q'])){
+      if(isset($call_args['params']['sort'])){
+        if($call_args['params']['sort'] != "search_api_relevance"){
+          unset($call_args['params']['sort']);
+        }
+
+      }
+    }
+  }
+}
+
+
+/**
+ * Implements hook_search_api_results_alter().
+ */
+function gti_keyword_search_search_api_results_alter(array &$results, SearchApiQueryInterface $query)
+{
+  global $user;
+
+  if($results['search_api_solr_response']) {
+
+    if (preg_match('/search_api_ajax/', $_GET['q'])){
+      $keyword = $query->getOriginalKeys();
+      $q = preg_replace('/search_api_ajax/', '', $_GET['q']);
+
+      $request = urldecode($results['search_api_solr_response']->request);
+
+      $resultCount = $results['result count'];
+      $premium = &drupal_static("gti_keyword_search_search_api_solr_query_alter");
+      if($premium == 1){
+        $premium = array_keys($results['results']);
+      }
+
+      $tags = explode('fq=', $request);
+
+      $today = new DateTime();
+      $request = explode('GET',$request);
+
+      $request = explode('HTTP',$request[1]);
+
+      $request = $request[0];
+
+      $options = $query->getOptions();
+      $sort = $query->getSort();
+      $nsort = "";
+      if(!empty($sort)){
+        $asort = array_keys($sort);
+        for($i=0;$i<sizeof($asort);$i++){
+          $nsort .= $asort[$i]." ".$sort[$asort[$i]];
+        }
+      }
+
+      $kwsid = db_insert('gti_keyword_search_info')
+        ->fields(array(
+          'uid' => $user->uid,
+          'search_view'=>$options['search id'],
+          'sort'=>$nsort,
+          'query_string'=>$q,
+          'solr_url' => $request,
+          'num_results' => $resultCount,
+          'keyword' => $keyword,
+          'created' => $today->format("Y-m-d h:i:s")
+        ))
+        ->execute();
+      for ($i = 0; $i < sizeof($tags); $i++) {
+        if (preg_match('/tag/', $tags[$i])) {
+          $tag = explode('tag=', $tags[$i]);
+          if ($tags) {
+            $tag = preg_replace('/&/', '', $tag[1]);
+            $tag = explode('}', $tag);
+            $fields = explode(":",$tag[1]);
+
+            if ($fields) {
+              db_insert('gti_keyword_search_facet_info')
+                ->fields(array(
+                  'kwsid' => $kwsid,
+                  'facet_field' => $tag[0],
+                  'field_name' => $fields[0],
+                  'field_value' => $fields[1],
+                  'created' => $today->format("Y-m-d h:i:s")
+                ))->execute();
+            }
+          }
+        }
+      }
+      $filters = $query->getFilter()->getFilters();
+//      $filters = $filter->filters;
+      for($i=0;$i<sizeof($filters);$i++){
+        if(is_object($filters[$i])){
+
+
+          $qFilter = $filters[$i]->getFilters();
+          $qTags = $filters[$i]->getTags();
+
+        if(is_array($qTags) && !empty($qTags)){
+          $qTagKeys = array_keys($qTags);
+          $qTag = $qTagKeys[0];
+        }else{
+          $qTag = "";
+        }
+
+
+          for($n=0;$n<sizeof($qFilter);$n++){
+
+            db_insert('gti_keyword_search_facet_info')
+              ->fields(array(
+                'kwsid' => $kwsid,
+                'facet_field' => $qTag,
+                'field_name' => $qFilter[$n][0],
+                'field_value' => $qFilter[$n][1],
+                'created' => $today->format("Y-m-d h:i:s")
+              ))->execute();
+          }
+
+        }
+      }
+
+
+
+    }
+  }
+
+
+}
+
+
+
+/**
+ * Implements hook_entity_property_info_ alter().
+ */
+/*
+function gti_keyword_search_entity_property_info_alter(&$info) {
+  if($info){
+
+    $info['node']['properties']['url_seg1'] = array(
+      'type' => 'text',
+      'label' => t('URL Segment 1'),
+      'description' => t("Field holds the URL segment Level 1"),
+      'sanitized' => TRUE,
+      'getter callback' => 'gti_keyword_search_seg_one_callback',
+    );
+    $info['node']['properties']['url_seg2'] = array(
+      'type' => 'text',
+      'label' => t('URL Segment 2'),
+      'description' => t("Field holds the URL segment Level 2"),
+      'sanitized' => TRUE,
+      'getter callback' => 'gti_keyword_search_seg_two_callback',
+    );
+    $info['node']['properties']['url_seg3'] = array(
+      'type' => 'text',
+      'label' => t('URL Segment 3'),
+      'description' => t("Field holds the URL segment Level 3"),
+      'sanitized' => TRUE,
+      'getter callback' => 'gti_keyword_search_seg_three_callback',
+    );
+    $info['node']['properties']['url_seg4'] = array(
+      'type' => 'text',
+      'label' => t('URL Segment 4'),
+      'description' => t("Field holds the URL segment Level 4"),
+      'sanitized' => TRUE,
+      'getter callback' => 'gti_keyword_search_seg_four_callback',
+    );
+
+  }
+}
+
+function gti_keyword_search_seg_one_callback($item){
+  return _url_seg_callback($item->search_api_url,0);
+}
+
+function gti_keyword_search_seg_two_callback($item){
+  return _url_seg_callback($item->search_api_url,1);
+}
+
+function gti_keyword_search_seg_three_callback($item){
+  return _url_seg_callback($item->search_api_url,2);
+}
+
+function gti_keyword_search_seg_four_callback($item){
+  return _url_seg_callback($item->search_api_url,3);
+}
+
+function _url_seg_callback($url,$seg){
+  $segurl = $url;
+  watchdog("gti_solr_index_url","url: ".$segurl);
+  $segNum = $seg +1;
+  $url_segments = explode('/',$segurl);
+  watchdog("gti_solr_index_url","segments ".print_r($url_segments,true));
+
+  unset($url_segments[0]);
+  $url_segments = array_values($url_segments);
+  unset($url_segments[0]);
+  $url_segments = array_values($url_segments);
+  unset($url_segments[0]);
+  $url_segments = array_values($url_segments);
+  if(isset($url_segments[$seg])){
+    $segment = preg_replace('/\-/'," ",$url_segments[$seg]);
+    if(is_numeric(substr($segment, 0, 1))){
+      $seg = explode(" ",$segment);
+      unset($seg[0]);
+      $segment = implode(" ",$seg);
+    }
+
+    watchdog("gti_solr_index_url","url_seg".$segNum." ".$segment);
+    return $segment;
+  }else{
+    return NULL;
+  }
+}
+*/
+
+
+
+
+
+function gti_keyword_search_block_view_alter($delta, $block) {
+
+  drupal_add_js(drupal_get_path('module', 'gti_keyword_search') . '/gti_keyword_search.js',  array(
+    'type' => 'file',
+    'scope' => 'header',
+    'group' => JS_DEFAULT,
+    'weight' => 13,
+  ));
+}
+
+/**
+ * Implements hook_node_presave().
+ */
+function gti_keyword_search_node_presave(&$node)
+{
+  _node_group_facet($node);
+}
+
+/**
+ * Implements hook_node_update().
+ */
+function gti_keyword_search_node_update($node)
+{
+  _node_group_facet($node);
+  field_attach_update('node', $node);
+}
+
+function _get_saved_groups() {
+  $overrides = array();
+
+  $query = db_select('gti_keyword_search_groups', 'groups');
+  $query->fields('groups', array('id', 'group_name','bundles'));
+
+  $result = $query->execute();
+
+  while($record = $result->fetchAssoc()){
+    $overrides[$record['id']] = array();
+    $overrides[$record['id']]['group_name'] = $record['group_name'];
+    $overrides[$record['id']]['bundles'] = $record['bundles'];
+  }
+
+  return $overrides;
+}
+
+function _node_group_facet($node)
+{
+  // Provides the "updated" values
+  $groups = _get_saved_groups();
+  foreach($groups as $id=>$group){
+    $bundles = unserialize($group['bundles']);
+    foreach($bundles as $bundle){
+      if($node->type == $bundle){
+        if($node->group_facet[LANGUAGE_NONE][0]['value'] != $group['group_name']){
+          $node->group_facet[LANGUAGE_NONE][0]['value'] = $group['group_name'];
+        }
+      }
+    }
+  }
+
+  cache_clear_all('field:node:' . $node->nid, 'cache_field');
+  $index = search_api_index_load('default_node_index');
+  search_api_index_specific_items($index, [$node->nid]);
+
+}
+
+/*
+function gti_keyword_search_facet_items_alter(&$build, &$settings){
+  $facet = $settings->facet;
+  if($facet == "group_facet" || $facet == "type"){
+
+  }
+}
+*/
+
+function gti_keyword_search_facetapi_facet_info_alter(array &$facet_info, array $searcher_info) {
+
+  if ('search_api' == $searcher_info['adapter']) {
+    $index = search_api_index_load($searcher_info['instance']);
+    if (!empty($index->options['fields'])) {
+      foreach ($index->getFields() as $key => $field) {
+        $facet_info[$key]['map options']['value callback'] = '_gti_keyword_search_facet_create_label';
+      }
+    }
+  }
+
+}
+
+
+function _gti_keyword_search_facet_create_label(array $values, array $options){
+  $field = $options['field'];
+  $map = array();
+  $n = count($values);
+
+  // For entities, we can simply use the entity labels.
+  if (isset($field['entity_type'])) {
+    $type = $field['entity_type'];
+    if($type == "taxonomy_term"){
+      $result = db_query('SELECT tid,name FROM {taxonomy_term_data} WHERE tid IN (:tids)', array(':tids' => $values));
+      if($result->rowCount() > 0){
+        $map = $result->fetchAllKeyed();
+      }
+      return $map;
+    }else{
+      $entities = entity_load($type, $values);
+      foreach ($entities as $id => $entity) {
+        $label = entity_label($type, $entity);
+        if ($label !== FALSE) {
+          $map[$id] = $label;
+        }
+      }
+      if (count($map) == $n) {
+        return $map;
+      }
+    }
+  }
+
+  // Then, we check whether there is an options list for the field.
+  $index = search_api_index_load($options['index id']);
+  $wrapper = $index->entityWrapper();
+  $values = drupal_map_assoc($values);
+  foreach (explode(':', $field['key']) as $part) {
+    if (!isset($wrapper->$part)) {
+      $wrapper = NULL;
+      break;
+    }
+    $wrapper = $wrapper->$part;
+    while (($info = $wrapper->info()) && search_api_is_list_type($info['type'])) {
+      $wrapper = $wrapper[0];
+    }
+  }
+  if ($wrapper && ($options_list = $wrapper->optionsList('view'))) {
+    // We have no use for empty strings, as then the facet links would be
+    // invisible.
+    $map += array_intersect_key(array_filter($options_list, 'strlen'), $values);
+    if (count($map) == $n) {
+      return $map;
+    }
+  }
+
+  // As a "last resort" we try to create a label based on the field type, for
+  // all values that haven't got a mapping yet.
+  foreach (array_diff_key($values, $map) as $value) {
+    switch ($field['type']) {
+      case 'boolean':
+        $map[$value] = $value ? t('true') : t('false');
+        break;
+      case 'date':
+        $v = is_numeric($value) ? $value : strtotime($value);
+        $map[$value] = format_date($v, 'short');
+        break;
+      case 'duration':
+        $map[$value] = format_interval($value);
+        break;
+    }
+  }
+  return $map;
+}
+
+/**
+ * Implements hook_facetapi_sort_info().
+ */
+function gti_keyword_search_facetapi_sort_info(){
+  $sort_info = array();
+  $sort_info['groupfacetsort'] = array(
+    'label' => t('Group Facet Sort'),
+    'callback' => '_gti_keyword_search_facetapi_sort_active',
+    // @see: facetapi_get_available_sorts().
+    'requirements' => array('_gti_keyword_search_sort_active_requirements' => TRUE),
+    'description' => t('Sort by'),
+    'weight' => -40,
+  );
+  return $sort_info;
+}
+
+function _gti_keyword_search_sort_active_requirements(){
+  return true;
+}
+
+function _gti_keyword_search_facetapi_sort_active(array $a , array $b){
+  $a_active = (isset($a['#active'])) ? $a['#active'] : 0;
+  $b_active = (isset($b['#active'])) ? $b['#active'] : 0;
+  $a_name = $a['#markup'];
+  $b_name = $b['#markup'];
+
+  if($a_active == 1){
+    if($a_name == "Vacancies"){
+      $return = 1;
+    }
+    if ($a_name == "Employers") {
+      $return = -1;
+    }
+    if ($a_name == "Advice") {
+      $return = -3;
+    }
+    if ($a_name == "Video") {
+      $return = -4;
+    }
+    if($a_name == "Advice" && $b_name == "Employers"){
+      $return = 1;
+    }
+    if($a_name == "Employers" && $b_name == "Video"){
+      $return = 1;
+    }
+
+
+  }else {
+    if($a_name == "Advice" && $b_name == "Employers"){
+      $return = 1;
+    }elseif($a_name == "Employers" && $b_name == "Video"){
+      $return = 1;
+    }elseif($a_name == "Advice" && $b_name == "Video"){
+      $return = 1;
+    }elseif($a_name == "Vacancies"){
+      $return = 1;
+    }elseif ($b_name == "Advice") {
+      $return = -1;
+    }elseif ($a_name == "Employers") {
+      $return = -1;
+    }elseif ($b_name == "Employers") {
+      $return = -1;
+    }elseif ($a_name == "Advice") {
+      $return = -1;
+    }elseif($b_name == "Vacancies"){
+      $return = 1;
+    }elseif($a_name == "Video"){
+      $return = 1;
+    }elseif($a_name == "Video"){
+      $return = 1;
+    }
+
+  }
+  return $return;
+
+}
+
+function _saved_content_saved_search(){
+  global $user;
+
+  if(isset($user->uid)){
+    $sql = "SELECT * FROM {search_api_saved_search} WHERE uid=:uid";
+    $result = db_query($sql, array( ':uid' => $user->uid));
+    $results = $result->fetchAllKeyed();
+    $current = preg_replace('/'.$_SERVER['HTTP_HOST'].'/',"",$_GET['current']);
+
+    $current = preg_replace('/\/\//',"+",$current);
+    //print_r("+".urlencode("/".$current));
+    //print "<br />";
+    if(isset($results)){
+      foreach($results as $result=>$id){
+
+          $savedSearch = search_api_saved_search_load($result);
+
+          $options = $savedSearch->options;
+          if(preg_match("/search_api_ajax/",$options['page']['path'])){
+            $path = preg_replace("/search_api_ajax/","",$options['page']['path']);
+          }else{
+            $path = "/".$options['page']['path'];
+          }
+
+
+          if(isset($options['page']['query'])){
+            $keys = array_keys($options['page']['query']);
+
+            for($i=0;$i<sizeof($options['page']['query']);$i++){
+              if($i == 0){
+                $path .= "?".$keys[$i]."=".$options['page']['query'][$keys[$i]];
+              }else{
+                $path .= "&".$keys[$i]."=".$options['page']['query'][$keys[$i]];
+              }
+            }
+          }
+//print "<br />";
+          //print_r("+".urlencode($path));
+       // print "<br />";
+
+          if(!empty($path)){
+            if("+".urlencode($path) == urlencode($current) ){
+
+              $output = ["saved_search"=>$id];
+             drupal_json_output($output);exit();
+            }
+          }
+
+
+      }
+
+     drupal_json_output(["saved_search"=>0]);exit();
+    }
+
+
+  }
+
+}

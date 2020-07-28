@@ -1,0 +1,8 @@
+name = GTI Keyword Search
+description = Keyword Search
+package = GTI Media Ltd
+core = 7.x
+version = 7.x-1.0
+dependencies[] = search_api_solr
+;files[] =
+;configure =

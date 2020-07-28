@@ -1,0 +1,292 @@
+<?php
+
+function gti_keyword_search_enable(){
+  $field_info = field_info_field("field_neg_keywords");
+
+//field does not exist, good; let's create it
+  if(empty($field_info)){
+    $field = array(
+      'field_name'=> "field_neg_keywords",
+      'type' => 'text',#list boolean - protected true or protected false
+      'cardinality'=>-1,
+      'locked'=> TRUE, #don't allow re-use/deletion of this field from normal UI.
+
+
+    );
+    field_create_field($field);
+  }
+  $entity_types = entity_get_info();
+  foreach($entity_types as $type => $entity){
+    if($type == "node"){
+      foreach($entity['bundles'] as $bundle => $data){
+        $instance_info = field_info_instance($type, "field_neg_keywords", $bundle);
+        if(empty($instance_info)){
+          $instance = array(
+            "label"=>"Negative Keyword",
+            "field_name"=>"field_neg_keywords",
+            "entity_type"=>$type,
+            "bundle"=>$bundle,
+            "description"=>"Create a Negative Keyword"
+          );
+          //create the field instance for the bundle.
+          field_create_instance($instance);
+        }
+      }
+    }
+  }
+
+  $field_info = field_info_field("field_exclude_keywords");
+
+//field does not exist, good; let's create it
+  if(empty($field_info)){
+    $field = array(
+      'field_name'=> "field_exclude_keywords",
+      'type' => 'text',#list boolean - protected true or protected false
+      'cardinality'=>-1,
+      'locked'=> TRUE, #don't allow re-use/deletion of this field from normal UI.
+
+
+    );
+    field_create_field($field);
+  }
+  $entity_types = entity_get_info();
+  foreach($entity_types as $type => $entity){
+    if($type == "node"){
+      foreach($entity['bundles'] as $bundle => $data){
+        $instance_info = field_info_instance($type, "field_exclude_keywords", $bundle);
+        if(empty($instance_info)){
+          $instance = array(
+            "label"=>"Exclude Keyword",
+            "field_name"=>"field_exclude_keywords",
+            "entity_type"=>$type,
+            "bundle"=>$bundle,
+            "description"=>"Create a Exclude Keyword"
+          );
+          //create the field instance for the bundle.
+          field_create_instance($instance);
+        }
+      }
+    }
+  }
+
+
+  $field_info = field_info_field("group_facet");
+
+//field does not exist, good; let's create it
+  if(empty($field_info)){
+    $field = array(
+      'field_name'=> "group_facet",
+      'type' => 'text',#list boolean - protected true or protected false
+      'cardinality'=>1,#only one value per bundle.
+      'locked'=> TRUE, #don't allow re-use/deletion of this field from normal UI.
+
+
+    );
+    field_create_field($field);
+  }
+  $entity_types = entity_get_info();
+  foreach($entity_types as $type => $entity){
+    if($type == "node"){
+      foreach($entity['bundles'] as $bundle => $data){
+        $instance_info = field_info_instance($type, "group_facet", $bundle);
+        if(empty($instance_info)){
+          $instance = array(
+            "label"=>"Group Facet",
+            "field_name"=>"group_facet",
+            "entity_type"=>$type,
+            "bundle"=>$bundle,
+            "description"=>"Create a Bundle Group"
+          );
+          //create the field instance for the bundle.
+          field_create_instance($instance);
+        }
+      }
+    }
+  }
+
+}
+
+function gti_keyword_search_uninstall(){
+
+  $entity_types = entity_get_info();
+  foreach($entity_types as $type => $entity){
+    foreach($entity['bundles'] as $bundle => $data){
+      $instance_info = field_info_instance($type, "group_facet", $bundle);
+      if(empty($instance_info)){
+
+        $instance = array(
+          "label"=>"Group Facet",
+          "field_name"=>"group_facet",
+          "entity_type"=>$type,
+          "bundle"=>$bundle,
+          "description"=>"Create a Bundle Group"
+        );
+        //create the field instance for the bundle.
+        field_delete_instance($instance, true);
+      }
+
+      $instance_info = field_info_instance($type, "field_neg_keywords", $bundle);
+      if(empty($instance_info)){
+        $instance = array(
+          "label"=>"Negative Keyword",
+          "field_name"=>"field_neg_keywords",
+          "entity_type"=>$type,
+          "bundle"=>$bundle,
+          "description"=>"Create a negative keyword"
+        );
+        //create the field instance for the bundle.
+        field_delete_instance($instance, true);
+      }
+
+      $instance_info = field_info_instance($type, "field_exclude_keywords", $bundle);
+      if(empty($instance_info)){
+        $instance = array(
+          "label"=>"Exclude Keyword",
+          "field_name"=>"field_exclude_keywords",
+          "entity_type"=>$type,
+          "bundle"=>$bundle,
+          "description"=>"Create a exclude keyword"
+        );
+        //create the field instance for the bundle.
+        field_delete_instance($instance, true);
+      }
+
+
+    }
+  }
+
+}
+
+function gti_keyword_search_schema(){
+  $schema['gti_keyword_search_info'] = array(
+    'description' => 'Capturing the keywords that users enter',
+    'fields' => array(
+      'id' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'description' => "",
+      ),
+      'uid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'description' => "",
+      ),
+      'search_view' => array(
+        'description' => '',
+        'type' => 'text',
+        'not null' => false,
+      ),
+      'query_string' => array(
+        'description' => '',
+        'type' => 'text',
+        'not null' => TRUE,
+      ),
+      'solr_url' => array(
+        'description' => '',
+        'type' => 'text',
+        'not null' => TRUE,
+      ),
+      'num_results' => array(
+        'description' => '',
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      'keyword' => array(
+        'description' => '',
+        'type' => 'text',
+        'not null' => false,
+      ),
+      'sort' => array(
+        'description' => '',
+        'type' => 'text',
+        'not null' => false,
+      ),
+      'created' => array(
+        'description' => '',
+        'type' => 'datetime',
+        'mysql_type' => 'DATETIME',
+        'not null' => TRUE,
+      ),
+    ),
+    'primary key' => array('id'),
+
+  );
+  $schema['gti_keyword_search_facet_info'] = array(
+    'description' => 'Capturing the facets that are used by the user',
+    'fields' => array(
+      'id' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'description' => "",
+      ),
+      'kwsid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'description' => "",
+      ),
+      'facet_field' => array(
+        'description' => '',
+        'type' => 'text',
+        'not null' => false,
+      ),
+      'field_name' => array(
+        'description' => '',
+        'type' => 'text',
+        'not null' => false,
+      ),
+      'field_value' => array(
+        'description' => '',
+        'type' => 'text',
+        'not null' => TRUE,
+      ),
+      'created' => array(
+        'description' => '',
+        'type' => 'datetime',
+        'mysql_type' => 'DATETIME',
+        'not null' => TRUE,
+      ),
+    ),
+    'primary key' => array('id'),
+  );
+
+  $schema['gti_keyword_search_groups'] = array(
+    'description' => 'Create the groups for facets',
+    'fields' => array(
+      'id' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'description' => "",
+      ),
+      'uid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'description' => "",
+      ),
+      'group_name' => array(
+        'description' => '',
+        'type' => 'text',
+        'not null' => TRUE,
+      ),
+      'bundles' => array(
+        'description' => '',
+        'type' => 'text',
+        'not null' => TRUE,
+      ),
+      'created' => array(
+        'description' => '',
+        'type' => 'datetime',
+        'mysql_type' => 'DATETIME',
+        'not null' => TRUE,
+      ),
+    ),
+    'primary key' => array('id'),
+  );
+
+  return $schema;
+}
