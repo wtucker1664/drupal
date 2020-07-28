@@ -1,0 +1,10 @@
+name=GTI user saved content
+description=Allows users to save content to their profile, and for admins to display this content via views
+core=7.x
+package=GTI Media Ltd
+
+dependencies[] = ctools
+dependencies[] = views
+
+; Views Handlers
+files[] = views/gti_user_saved_content_handler_remove_content.inc

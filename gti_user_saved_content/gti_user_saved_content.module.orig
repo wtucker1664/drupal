@@ -1,0 +1,383 @@
+<?php
+
+/**
+ * hook_ctools_plugin_directory
+ */
+function gti_user_saved_content_ctools_plugin_directory($module, $plugin){
+  if ($module == 'ctools' && $plugin == 'content_types') {
+    return "plugins";
+  }
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function gti_user_saved_content_views_api()
+{
+    return array(
+        'api' => 3,
+        'path' => drupal_get_path('module', 'gti_user_saved_content') . '/views',
+    );
+}
+
+/**
+ * Implements hook_permission().
+ * @return type
+ */
+function gti_user_saved_content_permission() {
+    return array(
+        'user save content' => array(
+            'title' => t('Allow user to save content'),
+            'description' => t('Allow user to save content to profile'),
+        ),
+        'administer user saved content' => array(
+            'title' => t('Administer user saved content'),
+            'description' => t('Allow admin to configure user saved content'),
+        ),
+    );
+}
+
+/**
+ * Implements hook_menu().
+ *
+ * @return array
+ */
+function gti_user_saved_content_menu() {
+    $items = array();
+
+    $items['admin/config/gti/user-saved-content'] = array(
+        'title' => 'GTI User saved content',
+        'description' => 'Configure content groups for users to save content to',
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('gti_user_saved_content_settings'),
+        'access arguments' => array('administer user saved content'),
+        'type' => MENU_NORMAL_ITEM,
+        'file' => 'gti_user_saved_content.admin.inc',
+    );
+
+    $items['user-saved-content/remove-group/%'] = array(
+        'page callback' => 'delete_user_saved_content_group',
+        'page arguments' => array(2),
+        'access arguments' => array('administer user saved content'),
+        'type' => MENU_CALLBACK,
+        'file' => 'gti_user_saved_content.admin.inc',
+    );
+
+    // Non-AJAX return path if no JavaScript turned on.
+    // Can save OR delete.
+    $items['save-content/nojs/%/%'] = array(
+        'page callback' => '_save_content',
+        'page arguments' => array(1, 2, 3),
+        'access arguments' => array('user save content'),
+        'type' => MENU_CALLBACK,
+    );
+
+    // AJAX return path if JavaScript turned on.
+    // Can save OR delete.
+    $items['save-content/ajax/%/%'] = array(
+        'page callback' => '_save_content',
+        'page arguments' => array(1, 2, 3),
+        'access arguments' => array('user save content'),
+        'type' => MENU_CALLBACK,
+    );
+
+    // AJAX return path for 'user saved content' view, if JavaScript enabled
+    $items['delete-saved-content-js/ajax/%/%/%'] = array(
+        'page callback' => '_delete_content',
+        'page arguments' => array(1, 2, 3, 4),
+        'access arguments' => array('user save content'),
+        'type' => MENU_CALLBACK,
+    );
+
+    // Non-AJAX return path for 'user saved content' view, if JavaScript disabled
+    $items['delete-saved-content-js/nojs/%/%/%'] = array(
+        'page callback' => '_delete_content',
+        'page arguments' => array(1, 2, 3, 4),
+        'access arguments' => array('user save content'),
+        'type' => MENU_CALLBACK,
+    );
+
+    return $items;
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function gti_user_saved_content_block_info() {
+    $block['save_button']['info'] = t('GTI user saved content - Save button');
+    $block['save_button']['cache'] = DRUPAL_NO_CACHE;
+    return $block;
+}
+
+function _get_group_details($type){
+    $query = db_select('gti_user_saved_content_groups', 'groups');
+    $query->join("gti_user_saved_content_group_types","t","t.saved_content_group_id = groups.saved_content_group_id");
+    $results = $query->condition('bundle', $type,'=')
+        ->fields("groups",array('saved_content_group_id','name','savebtntext','removebtntext'))
+        ->execute();
+
+    $group_details = array();
+    while($row = $results->fetchAssoc()){
+        $group_details[$row['saved_content_group_id']] = array(
+            'name' => $row['name'],
+            'savetxt' => $row['savebtntext'],
+            'removetxt' => $row['removebtntext'],
+        );
+    }
+
+    if(empty($group_details)){
+        return false;
+    }else{
+        return $group_details;
+    }
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function gti_user_saved_content_block_view($delta) {
+
+      $block = array();
+      switch ($delta) {
+          case 'save_button':
+                  $button = _generate_save_button(NULL);
+                  if($button){
+                      $block['content'] = _generate_save_button(NULL);
+                      drupal_add_library('system', 'drupal.ajax');  // This enables the nojs/ajax url replacement functionality
+                  }else{
+                      $block['content'] = '';
+                  }
+            break;
+    }
+    return $block;
+}
+
+/**
+ * Renders a button to allow a piece of content to be saved
+ *
+ * @global type $user
+ * @param type $node
+ * @param type $button_type
+ * @return string
+ */
+function _generate_save_button($node) {
+
+    //if node is not handed in to function try to grab node object from menu router load
+    if (!$node) {
+        $node = menu_get_object();
+    }elseif(is_numeric($node)){
+      $node = node_load($node);
+      $added = &drupal_static(__FUNCTION__);
+      if(!$added){
+        drupal_add_library('system', 'drupal.ajax');
+        $added = true;
+      }
+    }
+    //if we have a node object node, type will be set
+    if(isset($node->type)){
+        //see which group contains this type
+        $group_details = _get_group_details($node->type);
+        if(!$group_details){
+            return "";
+        }
+        //if there are more than one types, lets log a warning but continue and output one of them...
+        if(sizeof($group_details)>1){
+            watchdog("GTI user saved content","A content type has been assigned to multiple groups, this may cause undesired effects.",array(),WATCHDOG_ERROR);
+            $group_details = array_shift($group_details);
+        }
+        $group_id = array_keys($group_details);
+        $group_id = array_pop($group_id);
+        if(is_array($group_details)) {
+            $group_details = array_pop($group_details);
+        }
+
+    }else{
+        return "";
+    }
+
+    global $user;
+    $content = '<div id="save-button-wrapper-'.$node->nid.'">';
+    //remove any none friendly css chars from the entered name
+    $name = preg_replace("/[^A-Za-z0-9?!]/",'-',strtolower($group_details['name']));
+    if ($user->uid > 0) {
+        $check_content_sql = "SELECT COUNT(*) from {gti_user_saved_content} where nid = :nid and uid = :uid";
+        $result = db_query($check_content_sql, array(':nid' => $node->nid, ':uid' => $user->uid))->fetchField();
+
+        // If we get a count here then the user has already saved the content
+        if ($result == 0) {
+            $content .= '<div id="save-content" class="save-button-logged-in ' .$name . '">';
+            $content .= '<a href="/save-content/nojs/' . $node->nid . '/'.$user->uid.'" class="add-link use-ajax">' . $group_details['savetxt'] . '</a>';
+            $content .= '</div>';
+        }
+        else {
+            $content .= '<div id="save-content" class="save-button-saved ' . $name . '">';
+            $content .= '<a href="/save-content/nojs/' . $node->nid . '/'.$user->uid.'" class="remove-link use-ajax">' . $group_details['removetxt'] . '</a>';
+            $content .= '</div>';
+        }
+    }
+    else {
+        //lets output a link telling them to sign in to save content.
+        //@todo make the sign in text configurable.
+        $content .= '<div id="save-content" class="save-button-logged-out ' . $name  . '">';
+        $options = array("query"=>array("destination"=>drupal_get_path_alias()));
+        $content .= l("Sign in to save to your ". strtolower($group_details['name']),"/user/login",$options);
+        $content .= '</div>';
+    }
+    $content .= '</div>';
+
+    return $content;
+}
+
+/**
+ * Saves OR deletes a bit of content for a user with no javascript
+ *
+ * @param type $nid
+ */
+function _save_content($ajax, $nid, $uid) {
+    global $user;
+    $nid = check_plain($nid);
+    // check to see if user has saved this previously
+    $saved = db_select('gti_user_saved_content', 'gti')
+                        ->fields('gti')
+                        ->condition('nid', $nid)
+                        ->condition('uid', $uid)
+                        ->execute()
+                        ->rowCount();
+    if($saved){
+        // Have content, so delete
+        if ($user->uid > 0) {
+            if($uid == $user->uid){
+                db_delete('gti_user_saved_content')
+                            ->condition('nid', $nid)
+                            ->condition('uid', $uid)
+                            ->execute();
+            }else{
+                watchdog("gti user saved content","User ".$user->uid." attempted to remove saved content from ".$uid);
+            }
+        }
+    } else {
+        // Don't have content, so save
+        if ($user->uid > 0) {
+            if($uid == $user->uid){
+                $type = db_select('node','n')
+                    ->fields('n',['type'])
+                    ->condition('n.nid',$nid)
+                    ->execute()
+                    ->fetchField();
+
+                $query = db_select('gti_user_saved_content','usc');
+                    $query->fields('usc',['position'])
+                    ->condition('n.type',$type,'=');
+                $query
+                    ->orderBy('position','desc')
+                    ->range(0,1)
+                    ->join('node','n','n.nid = usc.nid');
+
+                $pos = $query
+                    ->execute()
+                    ->fetchField();
+                if($pos){
+                    $pos++;
+                }else{
+                    $pos = 1;
+                }
+
+                db_insert('gti_user_saved_content')
+                    ->fields(array(
+                        'uid' => $user->uid,
+                        'nid' => $nid,
+                        'position'=>$pos,
+                        'saved'=>time(),
+                    ))
+                    ->execute();
+            }else{
+                watchdog("gti user saved content","User ".$user->uid." attempted to amend content of ".$uid);
+            }
+        }
+    }
+
+    $node = node_load($nid);
+
+    // (This function call came from a block)
+    // Re-render button
+    if($ajax == 'ajax'){
+
+        // Using AJAX, so rebuild button only
+        $content = _generate_save_button($node);
+        $ajax_commands = array(ajax_command_replace('#save-button-wrapper-'.$node->nid, $content));
+        ajax_deliver(array('#type' => 'ajax', '#commands' => $ajax_commands));
+
+    } else {
+        // No AJAX, so refresh entire page
+        drupal_goto($_SERVER['HTTP_REFERER']);
+    }
+
+}
+
+function _delete_content($ajax, $nid, $view, $display)
+{
+    global $user;
+    // NOTE! If you are deleting something from a user's page while logged in as someone else (e.g. admin),
+    // be aware that the following code is likely to delete content for the admin user, not the proxy user..
+
+    // delete content
+    if ($user->uid > 0) {
+        db_delete('gti_user_saved_content')
+            ->condition('nid', $nid)
+            ->condition('uid', $user->uid)
+            ->execute();
+    }
+
+    // (This function call came from a view)
+    if ($ajax == 'ajax') {
+
+        // Using AJAX, so only re-render view affected by above delete
+        $content = views_embed_view($view, $display, $user->uid);
+        $ajax_commands = array(ajax_command_replace('.view-id-' .$view. '.view-display-id-' .$display, $content));
+        ajax_deliver(array('#type' => 'ajax', '#commands' => $ajax_commands));
+
+    } else {
+        // No AJAX, so refresh entire page
+        drupal_goto('/user');
+    }
+}
+
+/**
+ * Return a count of saved content for a user
+ * given the content type
+ */
+function gti_user_saved_content_count($user, $type = NULL){
+  $types = array_keys(node_type_get_types());
+  if(!in_array($type, $types)){
+    watchdog("gti_user_saved_content", "Failed to get node type : " . $type . " when trying to get saved content count.");
+    return false;
+  }
+
+  $query = db_select('gti_user_saved_content', 'sc');
+  $query->join('node', 'n', 'sc.nid = n.nid');
+  $results = $query
+    ->fields('n', array('nid'))
+    ->condition('sc.uid', $user->uid)
+    ->condition('n.type', $type)
+    ->condition('n.status', 1)
+    ->execute()
+    ->rowCount();
+
+  return $results;
+}
+
+/**
+ * hook_process
+ * We need to add our custom class to surround
+ * our custom plugin panes to enable click redirecting
+ */
+function gti_user_saved_content_process(&$variables, $hook){
+  if($hook == 'panels_pane' && $variables['pane']->type == 'gti_user_saved_content_count'){
+    if(isset($variables['classes_array'])){
+      //add our class to the classes array
+      $variables['classes_array'][] = 'gti-saved-content-count';
+    }
+    //re implode the classes
+    $variables['classes'] = implode(' ', $variables['classes_array']);
+  }
+}

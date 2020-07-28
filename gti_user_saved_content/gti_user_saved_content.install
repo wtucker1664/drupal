@@ -1,0 +1,287 @@
+<?php
+/**
+ * @todo Please document this function.
+ * @see http://drupal.org/node/1354
+ */
+function gti_user_saved_content_schema() {
+  $schema = [];
+  $schema['gti_user_saved_content'] = [
+    'description' => 'Stores details of the per user saved content',
+    'fields' => [
+      'cid' => [
+        'description' => 'The unique ID for this bit of saved content.',
+        'type' => 'serial',
+        'not null' => TRUE,
+      ],
+      'uid' => [
+        'description' => 'The uid of the user that saved the content',
+        'type' => 'int',
+        'not null' => TRUE,
+      ],
+      'nid' => [
+        'description' => 'The node id of the saved content',
+        'type' => 'int',
+        'not null' => TRUE,
+      ],
+      'order' => [
+        'description' => 'order of item',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'rating' => [
+        'description' => 'order of item',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'dateTimeSaved' => [
+        'description' => 'timestamp item saved by user',
+        'type' => 'int',
+        'size' => 'normal',
+        'not null' => TRUE,
+      ],
+      'notes' => [
+        'description' => 'notes against the saved item',
+        'type' => 'text',
+        'default' => '',
+      ],
+      'applied' => [
+        'description' => 'Timestamp of item applied by user',
+        'type' => 'int',
+        'size' => 'normal',
+        'default' => NULL,
+      ],
+      'statusId' => [
+        'description' => 'Application status ID',
+        'type' => 'text',
+      ],
+    ],
+    'primary key' => ['cid'],
+  ];
+
+
+  $schema['gti_user_saved_content_groups'] = [
+    'description' => 'Stores details of the per user saved content',
+    'fields' => [
+      'saved_content_group_id' => [
+        'description' => 'The ID for the group settings.',
+        'type' => 'serial',
+        'not null' => TRUE,
+      ],
+      'name' => [
+        'description' => 'Name of the group',
+        'type' => 'varchar',
+        'not null' => TRUE,
+        'length' => 255,
+      ],
+      'savebtntext' => [
+        'description' => 'Save button text for group',
+        'type' => 'text',
+        'not null' => TRUE,
+      ],
+      'removebtntext' => [
+        'description' => 'Remove button text for group',
+        'type' => 'text',
+        'not null' => TRUE,
+      ],
+    ],
+    'primary key' => ['saved_content_group_id'],
+  ];
+
+  $schema['gti_user_saved_content_group_types'] = [
+    'description' => 'Stores details of the per user saved content',
+    'fields' => [
+      'saved_content_group_id' => [
+        'description' => 'The ID for the group settings.',
+        'type' => 'int',
+        'not null' => TRUE,
+      ],
+      'bundle' => [
+        'description' => 'bundle associated to group',
+        'type' => 'varchar',
+        'not null' => TRUE,
+        'length' => 255,
+      ],
+    ],
+    'primary key' => ['saved_content_group_id', 'bundle'],
+  ];
+
+
+  $schema['gti_user_saved_content_application_statuses'] = [
+    'description' => 'Application Statuses',
+    'fields' => [
+      'statusId' => [
+        'description' => 'Application status ID',
+        'type' => 'serial',
+        'size' => 'normal',
+        'not null' => TRUE,
+      ],
+      'name' => [
+        'description' => 'Application status name',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => FALSE,
+      ],
+      'ats_name' => [
+        'description' => 'ATS status name',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => FALSE,
+      ],
+      'message' => [
+        'description' => 'Additional Message',
+        'type' => 'varchar',
+        'length' => 512,
+        'not null' => FALSE,
+      ],
+      'button_text' => [
+        'description' => 'Button text',
+        'type' => 'varchar',
+        'length' => 125,
+        'not null' => FALSE,
+      ],
+    ],
+    'primary key' => ['statusId'],
+  ];
+
+  return $schema;
+}
+
+/**
+ * @todo Please document this function.
+ * @see http://drupal.org/node/1354
+ */
+function gti_user_saved_content_install() {
+}
+
+/**
+ * @todo Please document this function.
+ * @see http://drupal.org/node/1354
+ */
+function gti_user_saved_content_uninstall() {
+}
+
+/**
+ *
+ *
+ * Removes type, applied column from gti_user_saved_content
+ */
+function gti_user_saved_content_update_7100() {
+  db_drop_field("gti_user_saved_content", 'type');
+  db_drop_field("gti_user_saved_content", 'applied');
+}
+
+/**
+ * Adding new fields to extend data user can associate
+ * with content of interest.
+ *
+ */
+function gti_user_saved_content_update_7200() {
+  $orderField = [
+    'description' => 'order of item',
+    'type' => 'int',
+    'not null' => TRUE,
+    'default' => 0,
+  ];
+  $ratingField = [
+    'description' => 'Rating of item',
+    'type' => 'int',
+    'not null' => TRUE,
+    'default' => 0,
+  ];
+  $dateTimeSavedField = [
+    'description' => 'Timestamp of item saved by user',
+    'type' => 'int',
+    'size' => 'normal',
+    'default' => NULL,
+  ];
+  $notesField = [
+    'description' => 'Notes against the saved item',
+    'type' => 'text',
+  ];
+  db_add_field('gti_user_saved_content', 'saved', $dateTimeSavedField);
+  db_add_field('gti_user_saved_content', 'position', $orderField);
+  db_add_field('gti_user_saved_content', 'rating', $ratingField);
+  db_add_field('gti_user_saved_content', 'notes', $notesField);
+}
+
+
+/**
+ * Add applied and application_status columns to gti_user_saved_content table to
+ * track application status of user saved content nodes
+ */
+function gti_user_saved_content_update_7201() {
+
+  $dateTimeAppliedField = [
+    'description' => 'Timestamp of item applied by user',
+    'type' => 'int',
+    'size' => 'normal',
+    'default' => NULL,
+  ];
+  $applicationStatusId = [
+    'description' => 'Application status',
+    'type' => 'text',
+  ];
+  db_add_field('gti_user_saved_content', 'applied', $dateTimeAppliedField);
+  db_add_field('gti_user_saved_content', 'application_status', $applicationStatusId);
+}
+
+/**
+ * Add gti_user_saved_content_application_statuses table
+ */
+function gti_user_saved_content_update_7202() {
+
+  $statuses = [
+    'description' => 'Application Statuses',
+    'fields' => [
+      'statusId' => [
+        'description' => 'Application status ID',
+        'type' => 'serial',
+        'size' => 'normal',
+        'not null' => TRUE,
+      ],
+      'name' => [
+        'description' => 'Application status name',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => FALSE,
+      ],
+      'ats_name' => [
+        'description' => 'ATS status name',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => FALSE,
+      ],
+      'message' => [
+        'description' => 'Additional Message',
+        'type' => 'varchar',
+        'length' => 512,
+        'not null' => FALSE,
+      ],
+      'button_text' => [
+        'description' => 'Button text',
+        'type' => 'varchar',
+        'length' => 125,
+        'not null' => FALSE,
+      ],
+    ],
+    'primary key' => ['statusId'],
+  ];
+
+  db_create_table('gti_user_saved_content_application_statuses', $statuses);
+}
+
+/**
+ * Remove friendly_name column from gti_user_saved_content_application_statuses table.
+ * Change application_status field to statusId
+ */
+function gti_user_saved_content_update_7203() {
+  db_drop_field("gti_user_saved_content_application_statuses", 'friendly_name');
+  $applicationStatusId = [
+    'description' => 'Application status ID',
+    'type' => 'varchar',
+    'length' => 16,
+  ];
+  db_change_field('gti_user_saved_content','application_status','statusId', $applicationStatusId);
+}
