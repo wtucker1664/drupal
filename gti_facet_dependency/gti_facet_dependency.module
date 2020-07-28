@@ -1,0 +1,26 @@
+<?php
+/**
+ * Implements hook_facetapi_facet_info_alter().
+ */
+function gti_facet_dependency_facetapi_facet_info_alter(&$facet_info, $searcher_info) {
+  foreach ($facet_info as &$facet) {
+    $facet['dependency plugins'][] = 'gti_facet_dependency';
+  }
+}
+
+
+/**
+ * Implements hook_facetapi_dependencies().
+ */
+function gti_facet_dependency_facetapi_dependencies() {
+  return array(
+    'gti_facet_dependency' => array(
+      'handler' => array(
+        'label' => t('GTI Facet Dependency'),
+        'class' => 'GTIFacetapiDependencyFacet',
+      ),
+      "path"=>"sites/all/modules/custom/gti_facet_dependency/plugins/facetapi",
+      "file"=>"dependency_gti_facet_dependency.inc"
+    ),
+  );
+}

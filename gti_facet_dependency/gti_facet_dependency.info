@@ -1,0 +1,7 @@
+name = GTI Facetapi Dependency
+description = Adds Dependency options to facets
+core = 7.x
+package = GTI Media Ltd
+
+dependencies[] = facetapi
+dependencies[] = search_api
